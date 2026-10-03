@@ -1,0 +1,211 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>2048</title>
+<link rel="icon" href="favicon.ico">
+<style>
+:root{--accent:#FBBF24}
+*{box-sizing:border-box}
+html,body{height:100%;overflow:hidden;margin:0}
+body{background:#04020F;color:#F4F1FF;font-family:system-ui,-apple-system,'Segoe UI',sans-serif;height:100dvh;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:10px;padding:10px;user-select:none;-webkit-user-select:none}
+h1{margin:0;font-size:30px;letter-spacing:3px;color:var(--accent);text-shadow:0 0 18px var(--accent)}
+.btn{background:transparent;border:2px solid var(--accent);color:var(--accent);border-radius:12px;font-size:20px;font-weight:700;padding:12px 30px;cursor:pointer;letter-spacing:1px;font-family:inherit}
+.btn:active{background:var(--accent);color:#04020F}
+[data-focusable]:focus{outline:none}
+[data-focusable]:focus-visible{outline:3px solid var(--accent);outline-offset:2px}
+.hud{display:flex;gap:22px;font-size:19px;font-weight:600}
+.hud b{color:var(--accent)}
+#wrap{position:relative;line-height:0}
+#grid{display:grid;grid-template-columns:repeat(4,1fr);grid-template-rows:repeat(4,1fr);gap:8px;background:#0d0a1f;border:2px solid var(--accent);border-radius:12px;box-shadow:0 0 24px rgba(251,191,36,.25);padding:10px;width:min(88vw,50dvh);height:min(88vw,50dvh)}
+.cell{border-radius:8px;display:flex;align-items:center;justify-content:center;font-weight:800;font-size:30px;line-height:1;background:#1a1533;color:#5b5478;transition:transform .08s}
+.overlay{position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:14px;background:rgba(4,2,15,.9);border-radius:12px;line-height:1.4;text-align:center;padding:18px;z-index:2}
+.overlay .big{font-size:32px;font-weight:800;color:var(--accent);text-shadow:0 0 16px var(--accent)}
+.overlay .sub{font-size:20px}
+.hidden{display:none!important}
+#controls{display:flex;gap:12px;min-height:56px}
+.hint{font-size:14px;opacity:.55}
+</style>
+</head>
+<body>
+<h1>2048</h1>
+<div class="hud"><span>SCORE <b id="score">0</b></span><span>BEST <b id="best">0</b></span></div>
+<div id="wrap">
+  <div id="grid"></div>
+  <div class="overlay" id="menuOv">
+    <div class="big">2048</div>
+    <div class="sub">Arrows slide tiles &bull; merge to 2048</div>
+    <button class="btn" id="startBtn" data-focusable>START</button>
+  </div>
+  <div class="overlay hidden" id="winOv">
+    <div class="big">YOU WIN!</div>
+    <div class="sub">You reached 2048</div>
+    <button class="btn" id="continueBtn" data-focusable>KEEP GOING</button>
+  </div>
+  <div class="overlay hidden" id="overOv">
+    <div class="big">GAME OVER</div>
+    <div class="sub">Score: <b id="finalScore">0</b></div>
+    <button class="btn" id="retryBtn" data-focusable>TRY AGAIN</button>
+  </div>
+</div>
+<div id="controls"><button class="btn hidden" id="newBtn" data-focusable>NEW GAME</button></div>
+<div class="hint">Slide with arrow keys &bull; Enter on NEW GAME restarts</div>
+<script>
+(function(){
+"use strict";
+/* ================= pure logic ================= */
+function slideLeft(row){
+  var t=[],i;
+  for(i=0;i<row.length;i++) if(row[i]!==0) t.push(row[i]);
+  var out=[],gained=0;
+  i=0;
+  while(i<t.length){
+    if(i+1<t.length&&t[i]===t[i+1]){ out.push(t[i]*2); gained+=t[i]*2; i+=2; }
+    else{ out.push(t[i]); i+=1; }
+  }
+  while(out.length<row.length) out.push(0);
+  return {row:out,gained:gained};
+}
+function moveBoard(b,dir){ /* 0 left,1 up,2 right,3 down */
+  var nb=[],moved=false,gained=0,i,j,x,y;
+  for(i=0;i<4;i++){
+    var line=[];
+    for(j=0;j<4;j++){
+      if(dir===0){x=i;y=j;}else if(dir===2){x=i;y=3-j;}else if(dir===1){x=j;y=i;}else{x=3-j;y=i;}
+      line.push(b[x][y]);
+    }
+    var r=slideLeft(line);
+    for(j=0;j<4;j++){
+      if(dir===0){x=i;y=j;}else if(dir===2){x=i;y=3-j;}else if(dir===1){x=j;y=i;}else{x=3-j;y=i;}
+      if(!nb[x]) nb[x]=[];
+      nb[x][y]=r.row[j];
+    }
+    for(j=0;j<4;j++) if(r.row[j]!==line[j]){ moved=true; break; }
+    gained+=r.gained;
+  }
+  return {board:nb,moved:moved,gained:gained};
+}
+function spawnTile(b,rand){
+  rand=rand||Math.random;
+  var e=[];
+  for(var i=0;i<4;i++)for(var j=0;j<4;j++) if(b[i][j]===0) e.push(i*4+j);
+  if(!e.length) return b;
+  var p=e[(rand()*e.length)|0];
+  b[(p/4)|0][p%4]=rand()<0.9?2:4;
+  return b;
+}
+function maxTile(b){ var m=0; for(var i=0;i<4;i++)for(var j=0;j<4;j++) if(b[i][j]>m) m=b[i][j]; return m; }
+function movesAvailable(b){
+  var i,j;
+  for(i=0;i<4;i++)for(j=0;j<4;j++){
+    if(b[i][j]===0) return true;
+    if(j<3&&b[i][j]===b[i][j+1]) return true;
+    if(i<3&&b[i][j]===b[i+1][j]) return true;
+  }
+  return false;
+}
+function emptyBoard(){ return [[0,0,0,0],[0,0,0,0],[0,0,0,0],[0,0,0,0]]; }
+function loadJSON(store,key,def){ try{ var v=store.getItem(key); return v?JSON.parse(v):def; }catch(e){ return def; } }
+function saveJSON(store,key,val){ try{ store.setItem(key,JSON.stringify(val)); }catch(e){} }
+if(typeof module!=="undefined"&&module.exports){
+  module.exports={slideLeft:slideLeft,moveBoard:moveBoard,spawnTile:spawnTile,maxTile:maxTile,movesAvailable:movesAvailable,emptyBoard:emptyBoard,loadJSON:loadJSON,saveJSON:saveJSON};
+  return;
+}
+/* ================= DOM ================= */
+var AC=null;
+function beep(f,d,type){
+  try{
+    if(!AC) AC=new (window.AudioContext||window.webkitAudioContext)();
+    var o=AC.createOscillator(),gn=AC.createGain();
+    o.type=type||"square"; o.frequency.value=f; gn.gain.value=0.05;
+    o.connect(gn); gn.connect(AC.destination); o.start();
+    var t=AC.currentTime+(d||0.07);
+    gn.gain.exponentialRampToValueAtTime(0.0001,t); o.stop(t+0.02);
+  }catch(e){}
+}
+var KEY="game-2048-v1";
+var COLORS={0:"#1a1533",2:"#2b2350",4:"#3b2f6e",8:"#8a5a13",16:"#a56f10",32:"#c07f0e",64:"#d99a12",128:"#e8b10a",256:"#f5c71f",512:"#f9d53a",1024:"#fbe25c",2048:"#FBBF24"};
+var state="menu", board=null, score=0, won=false;
+var grid=document.getElementById("grid"), scoreEl=document.getElementById("score"), bestEl=document.getElementById("best");
+var menuOv=document.getElementById("menuOv"), winOv=document.getElementById("winOv"), overOv=document.getElementById("overOv");
+var startBtn=document.getElementById("startBtn"), continueBtn=document.getElementById("continueBtn"),
+    retryBtn=document.getElementById("retryBtn"), newBtn=document.getElementById("newBtn");
+var meta=loadJSON(localStorage,KEY,{best:0,score:0});
+bestEl.textContent=meta.best;
+var cells=[];
+for(var c=0;c<16;c++){ var d=document.createElement("div"); d.className="cell"; grid.appendChild(d); cells.push(d); }
+function fmt(v){ return v>=10000?(v/1000).toFixed(v>=100000?0:1)+"k":String(v); }
+function render(){
+  for(var i=0;i<4;i++)for(var j=0;j<4;j++){
+    var v=board[i][j], el=cells[i*4+j];
+    el.textContent=v?v>=10000?fmt(v):v:"";
+    el.style.background=COLORS[v]||"#FBBF24";
+    el.style.color=v===0?"#5b5478":(v<=4?"#cfc6f5":"#1a1005");
+    el.style.fontSize=v>=1024?"22px":v>=128?"26px":"30px";
+    if(v>=2048){ el.style.boxShadow="0 0 18px #FBBF24"; } else { el.style.boxShadow="none"; }
+  }
+  scoreEl.textContent=score;
+}
+function setState(s){
+  state=s;
+  menuOv.classList.toggle("hidden",s!=="menu");
+  winOv.classList.toggle("hidden",s!=="won");
+  overOv.classList.toggle("hidden",s!=="over");
+  newBtn.classList.toggle("hidden",s==="menu");
+  if(s==="menu") startBtn.focus();
+  else if(s==="won") continueBtn.focus();
+  else if(s==="over") retryBtn.focus();
+  else newBtn.focus();
+}
+function startGame(){
+  board=emptyBoard(); spawnTile(board); spawnTile(board);
+  score=0; won=false; render(); setState("play"); beep(440,0.08);
+}
+function doMove(dir){
+  var r=moveBoard(board,dir);
+  if(!r.moved){ beep(140,0.05); return; }
+  board=r.board; score+=r.gained;
+  if(score>meta.best){ meta.best=score; saveJSON(localStorage,KEY,meta); bestEl.textContent=meta.best; }
+  spawnTile(board);
+  render();
+  beep(520+r.gained,0.07);
+  if(!won&&maxTile(board)>=2048){ won=true; setState("won"); beep(880,0.2,"sine"); return; }
+  if(!movesAvailable(board)){
+    document.getElementById("finalScore").textContent=score;
+    beep(160,0.3,"sawtooth"); setState("over");
+  }
+}
+startBtn.addEventListener("click",startGame);
+retryBtn.addEventListener("click",startGame);
+newBtn.addEventListener("click",startGame);
+continueBtn.addEventListener("click",function(){ setState("play"); });
+function visibleFocusables(){
+  var els=document.querySelectorAll("[data-focusable]"),out=[];
+  for(var i=0;i<els.length;i++){ if(els[i].getClientRects().length>0) out.push(els[i]); }
+  return out;
+}
+function moveFocus(d){
+  var els=visibleFocusables(); if(!els.length) return;
+  var i=els.indexOf(document.activeElement);
+  els[(i+d+els.length)%els.length].focus();
+}
+document.addEventListener("keydown",function(e){
+  var k=e.key, ae=document.activeElement, isBtn=ae&&ae.tagName==="BUTTON";
+  if(k==="ArrowUp"||k==="ArrowDown"||k==="ArrowLeft"||k==="ArrowRight"||k===" ") e.preventDefault();
+  if(state==="play"){
+    if(k==="ArrowLeft"){ doMove(0); return; }
+    if(k==="ArrowUp"){ doMove(1); return; }
+    if(k==="ArrowRight"){ doMove(2); return; }
+    if(k==="ArrowDown"){ doMove(3); return; }
+  }else{
+    if(k==="ArrowDown"||k==="ArrowRight") moveFocus(1);
+    else if(k==="ArrowUp"||k==="ArrowLeft") moveFocus(-1);
+  }
+  if((k==="Enter"||k===" ")&&isBtn){ e.preventDefault(); ae.click(); }
+});
+setState("menu");
+})();
+</script>
+</body>
+</html>
