@@ -1,0 +1,1 @@
+{"version":1,"name":"2048","description":"Slide and merge tiles to reach 2048.","appearance":{"theme_color":"#FBBF24","icon":{"src":"../icon-mono.png","type":"monochrome"},"icon_background":{"colors":["#FBBF24","#D97706","#1E1B4B","#04020F"],"stops":[0.0,0.33,0.66,1.0],"inner_glow_color":"#FDE68A"}}}
